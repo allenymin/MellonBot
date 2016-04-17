@@ -111,20 +111,29 @@ public class Chat {
 		reader = new BufferedReader(new InputStreamReader(s.getInputStream()));
 	}
 	
-	public void run() throws IOException {
-		writer.write("PASS "+oauth+"\r\n");
-		writer.write("NICK "+name+"\r\n");
+	public void send(String s) throws IOException {
+		writer.write(s+"\r\n");
+		writer.flush();
+	}
+	
+	public void privmsg(String s) throws IOException {
+		send("PRIVMSG "+channel+" :"+s);
+	}
+	
+	public void run() throws IOException, InterruptedException {
+		send("PASS "+oauth);
+		send("NICK "+name);
 		writer.flush();
 		String line = null;
-		writer.write("CAP REQ :twitch.tv/membership\r\n");
-		writer.write("CAP REQ :twitch.tv/tags\r\n");
-		writer.write("JOIN "+channel+"\r\n");
-		writer.write("PRIVMSG "+channel+" :MellonBot activated\r\n");
+		send("CAP REQ :twitch.tv/membership");
+		send("CAP REQ :twitch.tv/tags");
+		send("JOIN "+channel);
+		privmsg("MellonBot activated");
 		writer.flush();
 		while ((line = reader.readLine()) != null) {
 			System.out.println(line);
 			if (line.startsWith("PING ")) {
-				writer.write("PONG "+line.substring(5)+"\r\n");
+				send("PONG "+line.substring(5));
 				writer.flush();
 			} else if (line.contains("PRIVMSG")) {
 				Message m = new Message(line);
@@ -138,7 +147,8 @@ public class Chat {
 			} else if (line.contains("PART "+channel)) {
 				String n = parseName(line);
 				userList.remove(n);
-				addToMelonList(n);			}
+				addToMelonList(n);			
+			}
 		}
 	}
 	
@@ -160,24 +170,24 @@ public class Chat {
 	public void runCommands(Message msg) throws IOException{
 		String com = msg.getCommand();
 		if (com.equals("!kappa")) {
-			writer.write("PRIVMSG "+channel+" :Kappa count: "+KappaCount+"\r\n");
+			privmsg("Kappa count: "+KappaCount);
 		} else if (com.equals(("!followers"))) {
 			try {
 				int index = Integer.parseInt(msg.getWords()[1]);
 				String fi = Test.followers.get(index-1);
-				writer.write("PRIVMSG "+channel+" :Follower "+(index)+" is "+fi+" with "+Test.fc.get(fi)+" followers.\r\n");
+				privmsg("Follower "+(index)+" is "+fi+" with "+Test.fc.get(fi)+" followers.");
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
 		} else if (com.equals("!openRaffle")) {
 			if (raffleOpen) {
-				writer.write("PRIVMSG "+channel+" :Raffle is already open. Close current raffle first.\r\n");
+				privmsg("Raffle is already open. Close current raffle first.");
 				return;
 			}
 			raffle.clear();
 			if (msg.getWords().length == 2) raffleWord = "!"+msg.getWords()[1];
 			else raffleWord = "!raffle";
-			writer.write("PRIVMSG "+channel+" :New raffle opened with keyword: "+raffleWord+"\r\n");
+			privmsg("New raffle opened with keyword: "+raffleWord);
 			raffleOpen = true;
 		} else if (com.equals("!closeRaffle")) {
 			raffleOpen = false;
@@ -188,10 +198,10 @@ public class Chat {
 			int index = (int) (Math.random()*(raffle.size()));
 			System.out.println(index +" "+ raffle.size());
 			String winner = (String) raffle.toArray()[index];
-			writer.write("PRIVMSG "+channel+" :Winner is "+winner+"!\r\n");
+			privmsg("Winner is "+winner+"!");
 		} else if (com.equals("!mod")) {
-			if (msg.isMod()) writer.write("PRIVMSG "+channel+" :"+msg.getName()+" is a mod\r\n");
-			else writer.write("PRIVMSG "+channel+" :"+msg.getName()+" is not a mod\r\n");
+			if (msg.isMod()) privmsg(msg.getName()+" is a mod");
+			else privmsg(msg.getName()+" is not a mod");
 		} else if (com.equals("!addCommand")) {
 			String[] words = msg.getWords();
 			if (words.length < 3) return;
@@ -199,26 +209,26 @@ public class Chat {
 			for (int i = 2; i < msg.getWords().length; i++)	s.append(words[i]+" ");
 			cmds.put("!"+words[1], s.toString());
 		} else if (com.equals("!noodles")) {
-			//writer.write("PRIVMSG "+channel+" :"+msg.getName()+" has 0 noodles. Loser Kappa\r\n");
+			//privmsg(msg.getName()+" has 0 noodles. Loser Kappa");
 		} else if (com.equals("!hax")) {
-			String n = msg.getName();
-			if (!melonList.containsKey(n)) melonList.put(n, new Melon());
-			melonList.get(n).numMelons += 1000;
+			//String n = msg.getName();
+			//if (!melonList.containsKey(n)) melonList.put(n, new Melon());
+			//melonList.get(n).numMelons += 1000;
 		} else if (com.equals("!melons")) {
 			String n = msg.getName();
 			if (!melonList.containsKey(n)) melonList.put(n, new Melon());
-			writer.write("PRIVMSG "+channel+" :"+n+" has "+melonList.get(n).numMelons+" melons\r\n");
+			privmsg(n+" has "+melonList.get(n).numMelons+" melons");
 		} else if (com.equals("!mgamble")) {
 			String s = gamble(msg);
-			writer.write(s);
+			privmsg(s);
 		} else if (com.equals("!challenge")) {
 			String s = challenge(msg);
-			writer.write(s);
+			privmsg(s);
 		} else if (com.equals("!accept")) {
 			String s = accept(msg);
-			writer.write(s);
+			privmsg(s);
 		} else if (cmds.containsKey(com)) {
-			writer.write("PRIVMSG "+channel+" :"+cmds.get(com)+"\r\n");
+			privmsg(cmds.get(com));
 		}
 	}
 	
@@ -226,60 +236,69 @@ public class Chat {
 		String n = msg.getName();
 		Challenge c = melonList.get(n).c;
 		int m = melonList.get(n).numMelons;
-		if (c == null) return "PRIVMSG "+channel+" :"+n+", you don't have a pending challenge\r\n";
-		if (m < c.amount) return "PRIVMSG "+channel+" :"+n+", you don't have enough melons to accept the challenge\r\n";
-		if (melonList.get(c.challenger).numMelons < c.amount) return "PRIVMSG "+channel+" :"+c.challenger+" doesn't have enough melons\r\n";
+		if (c == null) return n+", you don't have a pending challenge";
+		if (m < c.amount) return n+", you don't have enough melons to accept the challenge";
+		if (melonList.get(c.challenger).numMelons < c.amount) return c.challenger+" doesn't have enough melons";
 		int r = (int)(Math.random() * 2);
 		if (r == 1) {
 			melonList.get(n).numMelons += c.amount;
 			melonList.get(c.challenger).numMelons -= c.amount;
 			melonList.get(n).c = null;
-			return "PRIVMSG "+channel+" :"+n+" has won the challenge and took "+c.amount+" melons from "+c.challenger+"!\r\n";
+			return n+" has won the challenge and took "+c.amount+" melons from "+c.challenger+"!";
 		} else {
 			melonList.get(n).numMelons -= c.amount;
 			melonList.get(c.challenger).numMelons += c.amount;
 			melonList.get(n).c = null;
-			return "PRIVMSG "+channel+" :"+c.challenger+" has won the challenge and took "+c.amount+" melons from "+n+"!\r\n";
+			return c.challenger+" has won the challenge and took "+c.amount+" melons from "+n+"!";
 		}
 	}
 	
 	public String challenge(Message msg) {
 		String n = msg.getName();
-		if (msg.getWords().length != 3) return "PRIVMSG "+channel+" :Use !challenge opponent x to challenge opponent for x melons\r\n";
-		String opp = msg.getWords()[1];
-		if (!userList.contains(opp)) return "PRIVMSG "+channel+" :"+opp+" doesn't seem to be here\r\n";
-		if (challengeList.containsKey(opp)) return "PRIVMSG "+channel+" :"+opp+" has a pending challenge already\r\n";
+		if (msg.getWords().length != 3) return "Use !challenge opponent x to challenge opponent for x melons";
+		String opp = msg.getWords()[1].toLowerCase();
+		if (!userList.contains(opp)) return opp+" doesn't seem to be here";
+		if (challengeList.containsKey(opp)) return opp+" has a pending challenge already";
 		try {
 			int m = Integer.parseInt(msg.getWords()[2]);
-			if (melonList.get(n).numMelons < m) return "PRIVMSG "+channel+" :"+n+", you don't have enough melons\r\n";
+			if (melonList.get(n).numMelons < m) return n+", you don't have enough melons";
 			long x = System.currentTimeMillis();
 			melonList.get(opp).c = new Challenge(m, n, x);
 			Timer t = new Timer();
 			t.schedule(new TimerTask() {
 				public void run() {
-					if (melonList.get(opp).c != null && melonList.get(opp).c.time == x) melonList.get(opp).c = null;
+					Challenge ch = melonList.get(opp).c;
+					if (ch != null && ch.time == x) {
+						try {
+							privmsg(n+"'s challenge against "+opp+" for "+m+" melons has expired");
+							writer.flush();
+						} catch (IOException e) {
+							e.printStackTrace();
+						}
+						melonList.get(opp).c = null;
+					}
 				}
 			}, 60000);
-			return "PRIVMSG "+channel+" :"+n+" has challenged "+opp+" for "+m+" melons! Type !accept to accept the challenge\r\n";
+			return n+" has challenged "+opp+" for "+m+" melons! Type !accept to accept the challenge. Challenge expires in one minute";
 		} catch (NumberFormatException e) {
-			return "PRIVMSG "+channel+" :Use !challenge opponent x to challenge opponent for x melons\r\n";
+			return "Use !challenge opponent x to challenge opponent for x melons";
 		}
 	}
 	
 	public String gamble(Message msg) {
 		String n = msg.getName();
-		if (msg.getWords().length != 2) return "PRIVMSG "+channel+" :Use !mgamble x to gamble x melons\r\n";
-		if (melonList.get(n).cooldown > System.currentTimeMillis()) return "PRIVMSG "+channel+" :You can only gamble once every 30 seconds\r\n";
+		if (msg.getWords().length != 2) return "Use !mgamble x to gamble x melons";
+		if (melonList.get(n).cooldown > System.currentTimeMillis()) return "You can only gamble once every 30 seconds";
 		try {
 			int m = Integer.parseInt(msg.getWords()[1]);
-			if (m < 10 || m > 10000) return "PRIVMSG "+channel+" :You can only gamble between 10 and 10000 melons\r\n";
-			if (melonList.get(n).numMelons < m) return "PRIVMSG "+channel+" :"+n+", you don't have enough melons\r\n";
+			if (m < 10 || m > 10000) return "You can only gamble between 10 and 10000 melons";
+			if (melonList.get(n).numMelons < m) return n+", you don't have enough melons";
 			int r = melonList.get(n).gamble(m);
 			int t = melonList.get(n).numMelons;
-			if (r > 50) return "PRIVMSG "+channel+" :"+n+" has rolled "+r+" and won "+m+" melons and now has "+t+" melons\r\n";
-			else  return "PRIVMSG "+channel+" :"+n+" has rolled "+r+" and lost "+m+" melons and now has "+t+" melons\r\n";
+			if (r > 50) return n+" has rolled "+r+" and won "+m+" melons and now has "+t+" melons";
+			else  return n+" has rolled "+r+" and lost "+m+" melons and now has "+t+" melons";
 		} catch (NumberFormatException e) {
-			return "PRIVMSG "+channel+" :Use !mgamble x to gamble x melons\r\n";
+			return "Use !mgamble x to gamble x melons";
 		}
 	}
 }

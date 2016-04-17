@@ -26,7 +26,7 @@ public class Test {
 		try {
 			chat.connect();
 			chat.run();
-		} catch (IOException e) {
+		} catch (IOException | InterruptedException e) {
 			e.printStackTrace();
 		}
 		System.out.println("finishing");
