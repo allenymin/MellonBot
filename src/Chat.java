@@ -3,6 +3,7 @@ import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Scanner;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -54,6 +55,12 @@ public class Chat {
 			numMelons = 1000;
 		}
 		
+		public Melon(int m) {
+			c = null;
+			cooldown = System.currentTimeMillis();
+			numMelons = m;
+		}
+		
 		public int gamble(int m) {
 			int r = (int)(Math.random() * 100) + 1;
 			if (r > 50) numMelons += m;
@@ -63,6 +70,19 @@ public class Chat {
 		}
 	}
 	
+	public class Boss {
+		
+		public int hp;
+		public int loot;
+		public HashMap<String, Long> cooldowns;
+		
+		public Boss(int h, int l) {
+			hp = h;
+			loot = l;
+			cooldowns = new HashMap<String, Long>();
+		}
+		
+	}
 	
 	static String server = "irc.twitch.tv";
 	static int port = 6667;
@@ -73,8 +93,11 @@ public class Chat {
 	int KappaCount;
 	HashMap<String, Melon> melonList;
 	HashSet<String> userList;
-	HashMap<String, String> challengeList;
+	HashSet<String> challengeList;
 	int rate;
+	boolean run = false;
+	Boss boss;
+	int melonpot;
 	
 	String name, channel, oauth;
 	BufferedWriter writer;
@@ -87,8 +110,10 @@ public class Chat {
 		cmds = new HashMap<String, String>();
 		melonList = new HashMap<String, Melon>();
 		userList = new HashSet<String>();
-		challengeList = new HashMap<String, String>();
+		challengeList = new HashSet<String>();
 		rate = 5;
+		melonpot = 0;
+		load_melons();
 		Timer timer = new Timer();
 		timer.schedule(new TimerTask() {
 			public void run() {
@@ -100,6 +125,33 @@ public class Chat {
 				System.out.println("Gave "+s+" "+rate+" melons");
 			}
 		}, 0, 60000);
+	}
+	
+	public void save_melons() {
+		try {
+			PrintWriter writer = new PrintWriter(channel+"_melons.txt");
+			for (String n : melonList.keySet()) {
+				writer.println(n + ":" + melonList.get(n).numMelons);
+			}
+			writer.close();
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	public void load_melons() {
+		File f = new File(channel+"_melons.txt");
+		try {
+			Scanner scan = new Scanner(f);
+			while (scan.hasNextLine()) {
+				String line = scan.nextLine();
+				int ind = line.indexOf(':');
+				if (ind > 0) melonList.put(line.substring(0, ind), new Melon(Integer.parseInt(line.substring(ind+1))));
+			}
+		} catch (FileNotFoundException e) {
+			System.out.println("No melon txt file found");
+		}
+		
 	}
 	
 	public void connect() throws UnknownHostException, IOException {
@@ -123,23 +175,18 @@ public class Chat {
 	public void run() throws IOException, InterruptedException {
 		send("PASS "+oauth);
 		send("NICK "+name);
-		writer.flush();
 		String line = null;
 		send("CAP REQ :twitch.tv/membership");
 		send("CAP REQ :twitch.tv/tags");
 		send("JOIN "+channel);
-		privmsg("MellonBot activated");
-		writer.flush();
 		while ((line = reader.readLine()) != null) {
 			System.out.println(line);
 			if (line.startsWith("PING ")) {
 				send("PONG "+line.substring(5));
-				writer.flush();
 			} else if (line.contains("PRIVMSG")) {
 				Message m = new Message(line);
 				otherChatParse(m);
 				runCommands(m);
-				writer.flush();
 			} else if (line.contains("JOIN "+channel)) {
 				String n = parseName(line);
 				userList.add(n);
@@ -147,7 +194,7 @@ public class Chat {
 			} else if (line.contains("PART "+channel)) {
 				String n = parseName(line);
 				userList.remove(n);
-				addToMelonList(n);			
+				addToMelonList(n);
 			}
 		}
 	}
@@ -169,7 +216,16 @@ public class Chat {
 	
 	public void runCommands(Message msg) throws IOException{
 		String com = msg.getCommand();
-		if (com.equals("!kappa")) {
+		if (!run) {
+			if (com.equals("!startmelon") && (msg.name.equals("allenmelon") || msg.name.equals("xaghant"))) {
+				run = true;
+				melonList = new HashMap<String, Melon>();
+				userList = new HashSet<String>();
+				challengeList = new HashSet<String>();
+				load_melons();
+				privmsg("MellonBot activated");
+			}
+		} else if (com.equals("!kappa")) {
 			privmsg("Kappa count: "+KappaCount);
 		} else if (com.equals(("!followers"))) {
 			try {
@@ -227,8 +283,61 @@ public class Chat {
 		} else if (com.equals("!accept")) {
 			String s = accept(msg);
 			privmsg(s);
+		} else if (com.equals("!killbot") && (msg.name.equals("allenmelon") || msg.name.equals("xaghant"))) {
+			save_melons();
+			run = false;
+		} else if (com.equals("!boss")) {
+			String s = boss();
+			privmsg(s);
+		} else if (com.equals("!attack")) {
+			String s = attack(msg);
+			privmsg(s);
+		} else if (com.equals("!spawnboss") && (msg.name.equals("allenmelon") || msg.name.equals("xaghant"))) {
+			String s = spawnboss();
+			privmsg(s);
+		} else if (com.equals("!melonpot")) {
+			privmsg("The melon pot is currently at " + melonpot + " melons.");
 		} else if (cmds.containsKey(com)) {
 			privmsg(cmds.get(com));
+		}
+	}
+	
+	public String spawnboss() {
+		if (boss != null) {
+			return "Boss is already spawned.";
+		} else {
+			boss = new Boss(50, melonpot);
+			melonpot = 0;
+			return "Boss is spawned with "+boss.hp+" hp and "+boss.loot+" melons.";
+		}
+	}
+	
+	public String attack(Message msg) {
+		if (boss == null) {
+			return "There is no boss to attack.";
+		}
+		String n = msg.getName();
+		if (boss.cooldowns.containsKey(n) && (System.currentTimeMillis() - boss.cooldowns.get(n) < 10000)) {
+			return "You can only attack once every ten seconds.";
+		}
+		boss.cooldowns.put(n, System.currentTimeMillis());
+		int dmg = (int)(Math.random() * 5) + 1;
+		boss.hp -= dmg;
+		if (boss.hp <= 0) {
+			int l = boss.loot;
+			boss = null;
+			melonList.get(n).numMelons += l;
+			return msg.getName() + " has dealt " + dmg + " damage to the boss and slain it for " + l + " melons!";
+		} else {
+			return msg.getName() + " has dealt " + dmg + " damage to the boss. Boss has " + boss.hp + " hp.";
+		}
+	}
+	
+	public String boss() {
+		if (boss == null) {
+			return "There is currently no boss";
+		} else {
+			return "Boss has " + boss.hp + " hp and " + boss.loot + " melons.";
 		}
 	}
 	
@@ -258,12 +367,13 @@ public class Chat {
 		if (msg.getWords().length != 3) return "Use !challenge opponent x to challenge opponent for x melons";
 		String opp = msg.getWords()[1].toLowerCase();
 		if (!userList.contains(opp)) return opp+" doesn't seem to be here";
-		if (challengeList.containsKey(opp)) return opp+" has a pending challenge already";
+		if (challengeList.contains(opp)) return opp+" has a pending challenge already";
 		try {
 			int m = Integer.parseInt(msg.getWords()[2]);
 			if (melonList.get(n).numMelons < m) return n+", you don't have enough melons";
 			long x = System.currentTimeMillis();
 			melonList.get(opp).c = new Challenge(m, n, x);
+			challengeList.add(opp);
 			Timer t = new Timer();
 			t.schedule(new TimerTask() {
 				public void run() {
@@ -271,10 +381,10 @@ public class Chat {
 					if (ch != null && ch.time == x) {
 						try {
 							privmsg(n+"'s challenge against "+opp+" for "+m+" melons has expired");
-							writer.flush();
 						} catch (IOException e) {
 							e.printStackTrace();
 						}
+						challengeList.remove(opp);
 						melonList.get(opp).c = null;
 					}
 				}
@@ -291,12 +401,15 @@ public class Chat {
 		if (melonList.get(n).cooldown > System.currentTimeMillis()) return "You can only gamble once every 30 seconds";
 		try {
 			int m = Integer.parseInt(msg.getWords()[1]);
-			if (m < 10 || m > 10000) return "You can only gamble between 10 and 10000 melons";
+			if (m < 10 || m > 100000) return "You can only gamble between 10 and 100000 melons";
 			if (melonList.get(n).numMelons < m) return n+", you don't have enough melons";
 			int r = melonList.get(n).gamble(m);
 			int t = melonList.get(n).numMelons;
 			if (r > 50) return n+" has rolled "+r+" and won "+m+" melons and now has "+t+" melons";
-			else  return n+" has rolled "+r+" and lost "+m+" melons and now has "+t+" melons";
+			else  {
+				melonpot += m;
+				return n+" has rolled "+r+" and lost "+m+" melons and now has "+t+" melons";
+			}
 		} catch (NumberFormatException e) {
 			return "Use !mgamble x to gamble x melons";
 		}
